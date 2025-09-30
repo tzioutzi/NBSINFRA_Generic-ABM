@@ -7,3 +7,4 @@ Components: the model features static components (patches) representing the buil
 Assessment: it assesses both the system's performance across various dimensions (e.g., vegetation condition, air quality) and the values of selected ecosystem services.
 Interface: a user-friendly interface allows users to define environmental specifications, select indicators, customize parameters, and monitor simulations in real-time.
 Scenarios: the model allows for the exploration of alternative operational conditions, including different NBS infrastructure types (e.g., rain gardens, bioswales) and disruptive events (e.g., rainstorm, drought), generating up to 12 distinct simulation scenarios.
+# Note: this is an archived repository
