@@ -1,0 +1,1894 @@
+globals [
+
+soil_suction ; related to soil humidity
+
+flora ; IVI, composite index to monitor the diversity and density of flora species
+ideal_veg ; intial IVI at tick 0, estimated at 79.33 for woody plants in urban green spaces by Muthulingam & Thangavel, 2012
+current_regeneration_rate ; the regeneration rate of every tick, as defined by soil humidity and fertility
+sfi ; soil fertility index calculated as: SFI= organic C% + pH adjusted from Panwar et al. 2011
+ideal_sfi ;  soil fertility index for min carbon content 5% and max soil acidity 6.0
+vegetation   ; composite index to monitor the condition of the flora and the soil fertility
+air          ; composite index to monitor the quality of air (cooling + aqii)
+air_sample ; total patches of atmosphere in contact with NBS area - sample for the assessment
+cool_patches ; total patches of atmosphere in contact with vegetation agents (vgts)
+aqii ; composite index Air Quality Impact Index (AQII) by Datta et al. 2021,
+       ;adjusted only for the physical characterisits of plants
+       ;assuming that all examined plants have similar Air Pollution Tolerance Index (API)
+ideal_aqii ; reference AQII index for the specific NBS
+;aqii_habit ; subindex of tree habit, based on plant's appearance, growth form and architecture
+;aqii_canopy ; density of canopy structure: sparse-semidense-dense
+;aqii_leaf ; Leaf Area Index (LAI) for each species
+
+;;; ECOSYSYEM SERVICES ;;;
+regulating ; services that regulate the elements and functions of the examined ecosystem
+  erosion_control_value ;
+  gas_regulation_value ;
+  microclimate_regulation_value ;
+  nutrient_cycling_value ;
+  pollination_value ;
+  refugia_value ;
+  soil_formation_value ;
+  water_regulation_value ;
+  waste_treatment_value ;
+provisioning ; services that provide additional properties to the examined ecosystem
+  food_production_value ;
+  genetic_resources_value ;
+  raw_materials_value ;
+  water_supply_value ;
+cultural ; services that provide cultural, recreational, aesthetic aspects to the examined ecosystems
+  cultural_use_value ;
+  recreation_value ;
+
+;;;; user-defined sliders ;;;;
+;NBStype : type of the examined nature-based solution (now only rain garden)
+;regeneration_rate :average regeneration rate at 6 trees/ha/year, max regeneration rate at 7.9 trees/ha/year as observed by Nowak, 2012
+;organic_content : percentage of organic matter content in the examined soil minimum 2% and the higher the better (Bierbaum, 2012)
+;soil_pH : acitidy or alkalinity of the soil expected between 6.0 and 7.0
+;temperature_variation : mean temperature variation as used in Kim et al. 2024
+;reference_habit : used for the calculation of reference tree habit subindex for the Air Quality Impact Iindex (Datta et al. 2021)
+;reference_canopy : used for the calculation of reference canopy subindex for the Air Quality Impact Iindex (Datta et al. 2021)
+
+;;;; user-defined switch ;;;
+;regeneration? : switch to enable the function of regeneration
+;rainstorm? : switch to enable the simulation of periodical rainstorms
+;drought? : switch to enabel the simulation of periodical droughts
+  ;;;; ecosystem services ;;;
+     ;; regulating ;;
+;erosion_control
+;gas_regulation
+;microclimate_regulation
+;nutrient_cycling
+;pollination
+;refugia
+;soil_formation
+;water_treatment
+;waste_regulation
+     ;; provisioning ;;
+;food_production
+;genetic_resources
+;raw_materials
+;water_supply
+     ;; cultural ;;
+;cultural_use
+  ;usage_level ; (monument, heritage, temple/church, botany, field trip, excursion, educational activities, etc)
+;recreation
+ ; satisfaction_level ; (walk, pic-nic, break, play, relax etc )
+]
+
+breed [vgts vgt]
+breed [anms anm]
+breed [birds brd]
+breed [people ppl]
+
+patches-own
+[
+  is-natural?  ;whether a patch represents natural surface
+  is-paved?    ;whether a patch represents paved surface
+  is-water?    ;whether a patch represents water body
+  underground? ;whether a patch represents underground layers
+  atmosphere?  ;whether a patch represents atmospheric volume
+
+  ; related to ground - flood protection - ground water storage
+  ground       ; composite index to monitor the condition of the ground
+  surface      ; composite index of surface characterisitcs (LID BMP parameter)
+               ; storage depth/berm height/barrel height, vegetation volume, surface roughness, surface slope
+  pavement     ; composite index of pavement characterisitcs (LID BMP parameter)
+               ; thickness, void ratio, impervious surface, permeability, clogging factor, regeneration interval
+  soil         ; composite index of soil characterisitcs (LID BMP parameter)
+               ; thickness, porosity field capacity, wilting point, conductivity, conductivity slope, suction head
+  storage      ; composite index of storage characterisitcs (LID BMP parameter)
+               ; height, void ratio, seepage rate, clogging factor
+   surface_roughness; 0.1 for soil and different vegetation roughness
+   ideal_roughness; 0.1 for RG
+   storage_depth ;number of patches under soil (patch is considered a cube with edge of 10mm)
+   ideal_depth;300mm for rain gardens
+   vegetation_volume ; average size of vegetation agents in radius 3 of the examined patch
+   ideal_vegetation_volume ;5/100 for RG
+   surface_slope ;absolute difference between patch and lowest neighboring patch expressed in decimal
+   ideal_surface_slope ;0.02 /2%
+   soil_thickness ; storage_depth for RG
+   ideal_soil_thickness ; 4,5 - 9 patches for RG
+   porosity;
+   ideal_porosity; 0.46 for normal clay (Minnesota Stormwater Manual, 2022)
+   ideal_soil_humidity; 0.32 /32% for normal clay (Minnesota Stormwater Manual, 2022)
+   wilting_point;
+   ideal_wilting_point; 0.15 for normal clay (Minnesota Stormwater Manual, 2022)
+   ideal_soil_suction ; max soil suction for 32% relative humidity in 25oC
+
+  ; related to air quality - cooling due to shading and evapotranspiration and reduction of the pollution levels
+  cooling    ; percentage of air patches with reduced temperature * mean temperature reduction
+   cool_dif ; absolute mean temperature difference during daytime determined by Kim et al. 2024
+
+]
+
+vgts-own
+[
+;related to flora health condition
+  plants_condition ; composite index comprising the flora population diversity and regeneration
+                   ; density, frequency, abandance and importance value as well as the natural regeneration rate
+    density ; Rd
+    frequency ; Rf
+    abundance ; Ra
+
+  aqii_habit ; subindex of tree habit, based on plant's appearance, growth form and architecture
+  aqii_canopy ; density of canopy structure: sparse-semidense-dense
+  aqii_leaf ; Leaf Area Index (LAI) for each species
+
+  original_size ; the reference size of vegetation agents at the beginning of the run
+]
+
+to setup
+  clear-all
+  setup-model
+  setup-vegetation
+  setup-BMP-variables
+  setup-ES-variables
+  assess-ground
+  setup-birds
+  setup-people
+  reset-ticks
+end
+
+to go
+  assess-ground
+  assess-vegetation
+  assess-air
+  assess-fauna
+  assess-people
+  assess-ES
+  if regeneration?
+    [regenerate_trees]
+  if rainstorm?
+    [if ticks > 2
+      [rainstorm]]
+  if drought?
+    [set rainstorm? false
+     drought]
+  tick
+
+end
+
+to setup-model
+
+;;setting the underground;;
+  ask patches with [pzcor = -16]
+    [set underground? true]
+  ask patches with [pzcor = -15 and pxcor > 3]
+    [set underground? true]
+  ask patches with [pzcor = -14 or pzcor = -13 and pxcor > 6 ]
+    [set underground? true]
+
+  ask patches with [underground? = true]
+    [set pcolor 2]
+
+;;setting the physical aspects of surfaces - discern green from the grey surfaces;;
+ask patches with [pzcor <= -6 and underground? != true]
+    [set is-paved? true]
+  ask patches with [pzcor = -5 or pzcor = -4  and pxcor > 6]
+  [set is-paved? true]
+ask patches with [pxcor >= 10 and pycor <= -7 and underground? != true]
+   [set is-paved? true]
+ask patches with [pxcor >= 10 and pycor >= 7 and pzcor <= 10 and underground? != true]
+   [set is-paved? true]
+
+ask patches with [pycor >= -2 and pxcor < 7 and underground? != true and pzcor <= -6]
+   [set is-paved? false
+    set is-natural? true]
+ask patches with [pxcor = (range -9 7) and underground? != true and pzcor <= -6]
+   [set is-paved? false
+    set is-natural? true]
+ask patches with [pxcor < 5 and pycor > 0 and pzcor >= -7]
+   [set is-natural? false]
+ask patches with [pxcor < 4 and pycor > 6 and pzcor >= -8]
+   [set is-natural? false]
+
+  ask patches with [is-natural? = true]
+    [set pcolor brown]
+  ask patches with [is-paved? = true]
+    [set pcolor 8]
+
+  ask patches with [is-paved? != true and is-natural? != true and underground? != true]
+    [set atmosphere? true]
+
+end
+
+to setup-BMP-variables
+  ask patches with [is-natural? = true and any? neighbors with [atmosphere? = true] ]
+    [if NBStype = "rain_garden"
+      [set ideal_depth 3
+       set ideal_vegetation_volume 0.05
+       set ideal_roughness 0.1
+       set ideal_surface_slope 0.02
+       set ideal_soil_thickness (range 450 950 50)
+       set ideal_porosity 0.46
+       set ideal_soil_humidity 0.32
+       set ideal_wilting_point 0.15
+       set ideal_soil_suction -1 * ((8.314 * 298)/ 1 * 18.016) * ln(0.32)]
+
+      if NBStype = "bioswale"
+      [set ideal_depth 6
+       set ideal_vegetation_volume 0.15
+       set ideal_roughness 0.15
+       set ideal_surface_slope 0.05
+       set ideal_soil_thickness (range 750 2000 50)
+       set ideal_porosity 0.46
+       set ideal_soil_humidity 0.40
+       set ideal_wilting_point 0.15
+       set ideal_soil_suction -1 * ((8.314 * 298)/ 1 * 18.016) * ln(0.32)]
+
+     if NBStype = "pavement"
+      [set ideal_depth 2
+       set ideal_vegetation_volume 0.05
+       set ideal_roughness 0.1
+       set ideal_surface_slope 0.02
+       set ideal_soil_thickness (range 50 550 50)
+       set ideal_porosity 0.46
+       set ideal_soil_humidity 0.25
+       set ideal_wilting_point 0.15
+       set ideal_soil_suction -1 * ((8.314 * 298)/ 1 * 18.016) * ln(0.32)]]
+
+       ifelse organic_content > 2
+          [set sfi organic_content + soil_pH]
+          [set sfi 0]
+      set ideal_sfi 5 + 6
+      set ideal_aqii count vgts * (reference_habit + reference_canopy + mean [aqii_leaf] of vgts)
+end
+
+to setup-vegetation
+;;setting the vegetation agents;;
+ create-vgts 10 ;; 1 row of different densities
+  ask vgt 0
+    [setxyz 5 -1 -3
+     set size 5
+     set aqii_leaf 3]
+  ask vgt 1
+    [setxyz 2 -1 -4
+     set size 2
+     set aqii_leaf 3]
+  ask vgt 2
+    [setxyz 0 -1 -4
+     set size 2
+     set aqii_leaf 2]
+  ask vgt 3
+    [setxyz -2 -1 -4
+     set size 3
+     set aqii_leaf 3]
+  ask vgt 4
+    [setxyz -4 -1 -4
+     set size 2
+     set aqii_leaf 32]
+  ask vgt 5
+    [setxyz -6 -1 -4
+     set size 2
+     set aqii_leaf 2]
+  ask vgt 6
+    [setxyz -8 -1 -4
+     set size 3
+     set aqii_leaf 3]
+  ask vgt 7
+    [setxyz -10 -1 -4
+     set size 2
+     set aqii_leaf 3]
+  ask vgt 8
+    [setxyz -12 -1 -4
+     set size 2
+     set aqii_leaf 2]
+  ask vgt 9
+    [setxyz -14 -1 -4
+     set size 2
+     set aqii_leaf 2]
+
+  create-vgts 75 ;; a uniform surface
+    [set size 0.8
+     set aqii_leaf 1.5]
+   ask vgt 10
+   [setxyz 4 1 -7]
+  ask vgt 11
+   [setxyz 4 2 -7]
+  ask vgt 12
+   [setxyz 4 3 -7]
+  ask vgt 13
+   [setxyz 4 4 -7]
+  ask vgt 14
+   [setxyz 4 5 -7]
+  ask vgt 15
+   [setxyz 4 6 -7]
+  ask vgt 16
+   [setxyz 3 1 -7]
+  ask vgt 17
+   [setxyz 3 2 -7]
+  ask vgt 18
+   [setxyz 3 3 -7]
+  ask vgt 19
+   [setxyz 3 4 -7]
+  ask vgt 20
+   [setxyz 3 5 -7]
+  ask vgt 21
+   [setxyz 3 6 -7]
+  ask vgt 22
+   [setxyz 2 1 -7]
+  ask vgt 23
+   [setxyz 2 2 -7]
+  ask vgt 24
+   [setxyz 2 3 -7]
+  ask vgt 25
+   [setxyz 2 4 -7]
+  ask vgt 26
+   [setxyz 2 5 -7]
+  ask vgt 27
+   [setxyz 2 6 -7]
+  ask vgt 28
+   [setxyz 1 1 -7]
+  ask vgt 29
+   [setxyz 1 2 -7]
+  ask vgt 30
+   [setxyz 1 3 -7]
+  ask vgt 31
+   [setxyz 1 4 -7]
+  ask vgt 32
+   [setxyz 1 5 -7]
+  ask vgt 33
+   [setxyz 1 6 -7]
+  ask vgt 34
+   [setxyz 0 1 -7]
+  ask vgt 35
+   [setxyz 0 2 -7]
+  ask vgt 36
+   [setxyz 0 3 -7]
+  ask vgt 37
+   [setxyz 0 4 -7]
+  ask vgt 38
+   [setxyz 0 5 -7]
+  ask vgt 39
+   [setxyz 0 6 -7]
+  ask vgt 40
+   [setxyz -1 1 -7]
+  ask vgt 41
+   [setxyz -1 2 -7]
+  ask vgt 42
+   [setxyz -1 3 -7]
+  ask vgt 43
+   [setxyz -1 4 -7]
+  ask vgt 44
+   [setxyz -1 5 -7]
+  ask vgt 45
+   [setxyz -1 6 -7]
+  ask vgt 46
+   [setxyz -2 1 -7]
+  ask vgt 47
+   [setxyz -2 2 -7]
+  ask vgt 48
+   [setxyz -2 3 -7]
+  ask vgt 49
+   [setxyz -2 4 -7]
+  ask vgt 50
+   [setxyz -2 5 -7]
+  ask vgt 51
+   [setxyz -2 6 -7]
+  ask vgt 52
+   [setxyz -3 1 -7]
+  ask vgt 53
+   [setxyz -3 2 -7]
+  ask vgt 54
+   [setxyz -3 3 -7]
+  ask vgt 55
+   [setxyz -3 4 -7]
+  ask vgt 56
+   [setxyz -3 5 -7]
+  ask vgt 57
+   [setxyz -3 6 -7]
+  ask vgt 58
+   [setxyz -4 1 -7]
+  ask vgt 59
+   [setxyz -4 2 -7]
+  ask vgt 60
+   [setxyz -4 3 -7]
+  ask vgt 61
+   [setxyz -4 4 -7]
+  ask vgt 62
+   [setxyz -4 5 -7]
+  ask vgt 63
+   [setxyz -4 6 -7]
+  ask vgt 64
+   [setxyz -5 1 -7]
+  ask vgt 65
+   [setxyz -5 2 -7]
+  ask vgt 66
+   [setxyz -5 3 -7]
+  ask vgt 67
+   [setxyz -5 4 -7]
+  ask vgt 68
+   [setxyz -5 5 -7]
+  ask vgt 69
+   [setxyz -5 6 -7]
+  ask vgt 70
+   [setxyz -7 1 -7]
+  ask vgt 71
+   [setxyz -7 3 -7]
+  ask vgt 72
+   [setxyz -7 5 -7]
+  ask vgt 73
+   [setxyz -9 2 -7]
+  ask vgt 74
+   [setxyz -9 4 -7]
+  ask vgt 75
+   [setxyz -9 6 -7]
+  ask vgt 76
+   [setxyz -11 1 -7]
+  ask vgt 77
+   [setxyz -11 3 -7]
+  ask vgt 78
+   [setxyz -11 5 -7]
+  ask vgt 79
+   [setxyz -13 2 -7]
+  ask vgt 80
+   [setxyz -13 4 -7]
+  ask vgt 81
+   [setxyz -13 6 -7]
+  ask vgt 82
+   [setxyz -15 1 -7]
+  ask vgt 83
+   [setxyz -15 3 -7]
+  ask vgt 84
+   [setxyz -15 5 -7]
+
+
+  create-vgts 30 ;; random vegetation in two levels
+  ask vgts with [who > 84 and who <= 114 ]
+    [set xcor random -18 + 4
+     set ycor random 9 + 8
+     set zcor -8
+     set size random 3 + 1
+     set aqii_leaf 2.5
+    if size = 2
+      [set zcor -7.5]
+    if size = 3
+      [set zcor -7] ]
+
+  ask n-of 3 vgts with [size = 3 and who > 84 and who <= 114 ]
+      [hatch 1
+        [set zcor -5
+         set size 2
+         set aqii_leaf 2.5]]
+
+   ask vgts
+  [set color green
+   set shape "circle"]
+
+end
+
+to assess-ground
+
+ifelse soil_humidity != 0
+  [set soil_suction -1 * ((8.314 * soil_temperature)/ 1 * 18.016) * ln(soil_humidity)]
+  [set soil_suction -1 * (8.314 * soil_temperature)/ 1 * 18.016 ]
+
+  ask patches with [is-natural? = true and any? neighbors with [atmosphere? = true] ]
+    [set storage_depth count patches with [is-natural? = true and pzcor <= [pzcor] of myself ] * 10 ;*10 to turn patches into mm
+     if any? vgts in-radius 3
+       [set vegetation_volume mean [size] of vgts in-radius 3]
+     ifelse any? neighbors with [pzcor != [pzcor] of myself ]
+       [set surface_slope abs (min [pzcor] of neighbors - pzcor) * 0.10 ]
+       [set surface_slope 0.02] ]
+
+  ask patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]
+   [ifelse vegetation_volume > 1
+      [set surface_roughness 0.02 ]
+      [set surface_roughness soil_roughness]]
+
+  ask patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]
+    [set surface ((storage_depth - ideal_depth)/ ideal_depth) / 4 +
+         ((vegetation_volume - ideal_vegetation_volume)/ ideal_vegetation_volume) / 4 +
+         ((surface_roughness - ideal_roughness) / ideal_roughness) / 4 +
+         ((ideal_surface_slope - surface_slope)/ ideal_surface_slope) / 4 ]
+
+  ask patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]
+    [ifelse storage_depth < min ideal_soil_thickness
+      [set soil_thickness storage_depth - min ideal_soil_thickness]
+      [set soil_thickness 0]
+    ifelse storage_depth > max ideal_soil_thickness
+      [set soil_thickness storage_depth - max ideal_soil_thickness]
+      [set soil_thickness 0]
+    set soil ((mean ideal_soil_thickness - soil_thickness)/ mean ideal_soil_thickness) / 5 +
+             ((porosity - ideal_porosity) / ideal_porosity) / 5 +
+             ((ideal_soil_humidity - soil_humidity) / ideal_soil_humidity) / 5 +
+             ((ideal_wilting_point - wilting_point ) / ideal_wilting_point) / 5 +
+             ((soil_suction - ideal_soil_suction) / ideal_soil_suction) / 5  ]
+
+  ;; if any storage system installed additional parameters to be applied here
+  ;; STORAGE height (mm), void/ratio (fraction 0.5 - 0.75), seepage rate, clogging factor (360)
+
+  ask patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]
+      [if NBStype = "rain_garden"
+        [set ground surface / 2 + soil / 2]]
+
+end
+
+to setup-birds
+  if refugia = true
+     [create-birds 16 * (count vgts with [size > 2 ])  ; nest per tree density from Alonso et al. 1991
+         [set color orange
+          set size 0.3
+          setxyz random-xcor random-ycor -2]
+     create-birds 2.75 * (count vgts with [size <= 2 and size > 0.5 ])  ; nest per tree density from Alonso et al. 1991
+         [set color orange
+          set size 0.3
+          setxyz random-xcor random-ycor -3]]
+
+end
+
+to setup-people
+  if cultural_use = true or recreation = true
+    [ask n-of 10 patches with [atmosphere? = true and any? neighbors with [is-natural? = true]]
+      [sprout-people 1
+        [set color red
+         set size 0.80
+         set pitch 90
+         set shape "triangle"
+         set xcor one-of (range -17 7)
+         set ycor one-of (range -3 17)
+         set zcor -5 ]]]
+
+end
+
+to setup-ES-variables
+  if NBStype = "rain_garden"
+    [;;; regulating ;;;
+     set erosion_control true
+     set gas_regulation true
+     set microclimate_regulation true
+     set nutrient_cycling true
+     set pollination true
+     set refugia true
+     set soil_formation true
+     set water_regulation true
+     set waste_treatment false
+     ;;; provisioning ;;;
+     set food_production false
+     set genetic_resources true
+     set raw_materials false
+     set water_supply true
+     ;;; cultural ;;;
+     set cultural_use true
+     set recreation true
+  ]
+
+end
+
+to assess-vegetation
+  ask vgts
+    [let abs_density1 (count vgts with [size <= 1]) ; quadrat = 100mm2, so / 100 * 100 is ommited
+     let abs_density2 (count vgts with [size = 2]) ; per 100mm2
+     let abs_density3 (count vgts with [size = 3])
+     let abs_density5 (count vgts with [size = 5])
+     set density (count vgts with [size = [size] of myself] * 100 / (abs_density1 + abs_density2 + abs_density3 + abs_density5) ) ; species per mm2
+
+     let sizeF [size] of self
+     set frequency (count vgts with [size = [size] of myself ] * sizeF * 100)
+                    / count patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]
+     set abundance (count vgts with [size = [size] of myself]) * 100 / count vgts
+  ]
+
+   if ticks = 1
+     [set ideal_veg mean [density + frequency + abundance] of vgts]
+   if ideal_veg > 0
+     [set flora (mean [density + frequency + abundance] of vgts - ideal_veg) / ideal_veg] ; ivi, importance value index, calculated as: IVI=Rd+Rf+Ra
+
+   if sfi > 0 and soil_humidity > 0.20
+       [set current_regeneration_rate ((organic_content / 20) * regeneration_rate +  regeneration_rate)]
+   let sfi_perf (sfi - ideal_sfi / ideal_sfi)
+
+   set vegetation flora + sfi_perf
+
+  ask vgts with [size <= 1]
+    [set aqii_habit 1
+     set aqii_canopy 1]
+  ask vgts with [size = 2]
+    [set aqii_habit 2
+     set aqii_canopy 2]
+   ask vgts with [size > 2]
+    [set aqii_habit 3
+     set aqii_canopy 3]
+
+end
+
+to assess-air
+  ask vgts
+    [ask patches in-radius (3 * [size] of self) with [atmosphere? = true]
+      [if temperature_variation = "<10"
+        [set cool_dif 1.5]
+      if temperature_variation = "10-20"
+        [set cool_dif 0.9]
+      if temperature_variation = "20-30"
+        [set cool_dif 0.8]]]
+
+  ask patches with [atmosphere? = true]
+      [set air_sample count patches with [atmosphere? = true and pzcor <= 2 and pycor >= 0 and pcolor = 0]]
+
+  set cool_patches count patches with [atmosphere? = true and any? vgts-here = true] * 8 * mean [size] of vgts
+
+  ask patches with [atmosphere? = true]
+        [set cooling (cool_patches / air_sample) * (cool_dif) * 100]
+
+  ask vgts
+    [set aqii mean [aqii_habit] of vgts + mean [aqii_canopy] of vgts + mean [aqii_leaf] of vgts
+     set air ((aqii - ideal_aqii) / ideal_aqii) + (cooling)]
+
+end
+
+to assess-fauna
+      ask birds
+       [fd 5]
+end
+
+to assess-people
+      ask people
+       [move-to one-of patches with [atmosphere? = true] in-radius 2]
+     if satisfaction_level >= 0.50
+       [ask n-of 1 patches with [atmosphere? = true and any? neighbors with [is-natural? = true]]
+         [sprout-people 1]]
+     if satisfaction_level >= 0.75
+       [ask n-of 2 patches with [atmosphere? = true and any? neighbors with [is-natural? = true]]
+         [sprout-people 1]]
+     if satisfaction_level < 0.50
+       [ask n-of 1 people
+          [die]]
+     if satisfaction_level < 0.25
+       [ask n-of 2 people
+          [die]]
+
+     if usage_level >= 0.50
+       [ask n-of 1 patches with [atmosphere? = true and any? neighbors with [is-natural? = true]]
+         [sprout-people 1]]
+
+     ask people
+      [set color red
+       set size 0.80
+       set pitch 90
+       set shape "triangle"
+       set xcor one-of (range -17 7)
+       set ycor one-of (range -3 17)
+       set zcor -5 ]
+
+end
+
+to assess-ES
+  ifelse erosion_control = true
+    [set erosion_control_value mean [ground] of patches ]
+    [set erosion_control_value 0]
+  ifelse gas_regulation = true
+    [set gas_regulation_value aqii]
+    [set gas_regulation_value 0 ]
+  ifelse microclimate_regulation = true
+    [set microclimate_regulation_value mean [cooling] of patches ]
+    [set microclimate_regulation_value 0]
+  ifelse nutrient_cycling = true
+    [set nutrient_cycling_value (sfi - ideal_sfi / ideal_sfi)] ;soil reftility perfomance
+    [set nutrient_cycling_value 0]
+  ifelse pollination = true
+    [set pollination_value (cool_patches / count patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]) ]
+    [set pollination_value 0]
+  ifelse refugia = true
+    [set refugia_value 1 * (count birds / count patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]) ]
+    [set refugia_value 0]
+  ifelse soil_formation = true
+    [set soil_formation_value mean [soil] of patches]
+    [set soil_formation_value 0]
+  ifelse water_regulation = true
+    [set water_regulation_value 0.10 * abs ((mean [soil_suction] of patches - mean [ideal_soil_suction] of patches) / mean [ideal_soil_suction] of patches) ]
+    [set water_regulation_value 0]
+  ifelse waste_treatment = true
+    [set waste_treatment_value (-0.010 * count birds / count patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]) + (-0.010 * count vgts * mean [size] of vgts)]
+    [set waste_treatment_value 0]
+
+  set regulating (erosion_control_value + gas_regulation_value + microclimate_regulation_value + nutrient_cycling_value + pollination_value + refugia_value + soil_formation_value + water_regulation_value + waste_treatment_value) / 9 ; average of all regulating services
+
+  ifelse food_production = true
+    [set food_production_value 0.0010 * count vgts * mean [size] of vgts]
+    [set food_production_value 0]
+  ifelse genetic_resources = true
+    [set genetic_resources_value (0.001 * count vgts) + (0.001 * count birds)]
+    [set genetic_resources_value 0]
+  ifelse raw_materials_value = true
+    [set raw_materials_value 0.1] ;???
+    [set raw_materials_value 0]
+  ifelse water_supply = true
+    [set water_supply_value (- 0.010 * count patches with [is-natural? = true and any? neighbors with [atmosphere? = true]]) ]
+    [set water_supply_value 0]
+
+  set provisioning (food_production_value + genetic_resources_value + raw_materials_value + water_supply_value) / 4 ; average of all provisioning services
+
+  ifelse cultural_use = true
+    [set cultural_use_value 0.10 * usage_level * count people ]
+    [set cultural_use_value 0]
+  ifelse recreation = true
+    [set recreation_value 0.10 * satisfaction_level * count people]
+    [set recreation_value 0]
+
+  set cultural (cultural_use_value + recreation_value) / 2 ; average of all cultural services
+
+end
+
+to regenerate_trees
+
+  if ticks < 2
+   [ask vgts
+      [set original_size [size] of self]]
+
+  if ticks >= 2 and soil_humidity > 0.20 and soil_humidity < 0.80 and organic_content > 2 and soil_pH > 5.9 and soil_pH < 7.1
+  [ask vgts
+    [set size ((regeneration_rate / 6 ) * 0.05 * ticks + 1) * original_size ]
+   ask n-of (regeneration_rate / 6) vgts
+    [hatch 1 [set size 1] ]]
+
+  if ticks >= 2
+   [ask n-of (random 1) vgts
+      [die]]
+
+end
+
+to rainstorm
+
+  ask patches with [is-natural? = true and pcolor = brown and surface_slope = 0.02]
+    [set soil_humidity 0.70 + (0.20 * ticks)
+     set regeneration_rate 0]
+
+  ask patches with [is-natural? = true and pcolor = brown and surface_slope > 0.02]
+    [set soil_humidity 0.60 + (0.10 * ticks)
+     set regeneration_rate 0]
+
+  ask n-of (random 2) vgts
+     [die]
+
+  if ticks > 6
+    [set rainstorm? false]
+
+
+end
+
+to drought
+
+  ask patches with [is-natural? = true and pcolor = brown]
+    [set soil_humidity wilting_point
+     set regeneration_rate 0]
+
+  ask n-of (random 1) vgts
+      [die]
+
+   ask vgts with [size <= 1]
+    [set aqii_habit 0.5
+     set aqii_canopy 0.5]
+  ask vgts with [size = 2]
+    [set aqii_habit 1
+     set aqii_canopy 1]
+   ask vgts with [size > 2]
+    [set aqii_habit 1.5
+     set aqii_canopy 1.5]
+
+end
+@#$#@#$#@
+GRAPHICS-WINDOW
+0
+0
+439
+460
+-1
+-1
+13.0
+1
+10
+1
+1
+1
+0
+1
+1
+1
+-16
+16
+-16
+16
+-16
+16
+1
+0
+1
+ticks
+30.0
+
+BUTTON
+9
+10
+72
+43
+NIL
+setup
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+0
+84
+137
+117
+soil_roughness
+soil_roughness
+0
+1
+0.1
+.05
+1
+n
+HORIZONTAL
+
+TEXTBOX
+2
+61
+152
+79
+Properties of ground
+12
+0.0
+1
+
+TEXTBOX
+355
+63
+505
+81
+Properties of air
+12
+0.0
+1
+
+SLIDER
+0
+170
+137
+203
+soil_humidity
+soil_humidity
+0
+1
+0.32
+.01
+1
+NIL
+HORIZONTAL
+
+TEXTBOX
+168
+62
+318
+80
+Properties of vegetation
+12
+0.0
+1
+
+CHOOSER
+357
+10
+492
+55
+NBStype
+NBStype
+"rain_garden" "bioswale" "permeable_pavement"
+0
+
+MONITOR
+1
+246
+138
+291
+surface performance (%)
+mean [surface] of patches
+2
+1
+11
+
+MONITOR
+168
+121
+327
+166
+relative density
+mean [density] of vgts
+3
+1
+11
+
+SLIDER
+0
+207
+137
+240
+soil_temperature
+soil_temperature
+243
+350
+305.0
+1
+1
+K
+HORIZONTAL
+
+CHOOSER
+0
+121
+137
+166
+soil_type
+soil_type
+"normal_clay"
+0
+
+MONITOR
+0
+295
+138
+340
+soil perormance (%)
+mean [soil] of patches
+2
+1
+11
+
+PLOT
+0
+391
+447
+530
+NBS performance score
+ticks
+(%)
+0.0
+10.0
+-50.0
+50.0
+true
+true
+"" ""
+PENS
+"ground" 1.0 0 -6459832 true "" "plot mean [ground] of patches"
+"vegetation" 1.0 0 -10899396 true "" "plot flora + (sfi - ideal_sfi / ideal_sfi)"
+"air" 1.0 0 -13791810 true "" "plot air"
+
+BUTTON
+161
+10
+224
+43
+go
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+168
+169
+326
+214
+relative frequency
+mean [frequency] of vgts
+3
+1
+11
+
+MONITOR
+168
+217
+325
+262
+relative abundance
+mean [abundance] of vgts
+3
+1
+11
+
+SLIDER
+168
+85
+327
+118
+regeneration_rate
+regeneration_rate
+0
+10
+6.0
+1
+1
+tr/ha/y
+HORIZONTAL
+
+SLIDER
+168
+265
+325
+298
+organic_content
+organic_content
+0
+100
+8.0
+1
+1
+%
+HORIZONTAL
+
+SLIDER
+168
+301
+326
+334
+soil_pH
+soil_pH
+0
+14
+6.5
+0.1
+1
+NIL
+HORIZONTAL
+
+MONITOR
+169
+337
+325
+382
+soil fertility performance (%)
+sfi - ideal_sfi / ideal_sfi
+3
+1
+11
+
+CHOOSER
+353
+85
+511
+130
+temperature_variation
+temperature_variation
+"<10" "10-20" "20-30"
+2
+
+MONITOR
+353
+136
+511
+181
+cooling performance (%)
+mean [cooling] of patches
+2
+1
+11
+
+MONITOR
+353
+260
+511
+305
+air quality assessment (%)
+aqii
+2
+1
+11
+
+SLIDER
+353
+222
+511
+255
+reference_canopy
+reference_canopy
+0
+3
+1.8
+0.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+353
+185
+511
+218
+reference_habit
+reference_habit
+0
+3
+2.0
+0.1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+523
+11
+644
+44
+regeneration?
+regeneration?
+1
+1
+-1000
+
+BUTTON
+79
+10
+152
+43
+go once
+go
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SWITCH
+527
+86
+636
+119
+rainstorm?
+rainstorm?
+1
+1
+-1000
+
+SWITCH
+527
+125
+636
+158
+drought?
+drought?
+1
+1
+-1000
+
+TEXTBOX
+528
+64
+678
+82
+Disturbance types
+12
+0.0
+1
+
+MONITOR
+454
+392
+534
+433
+ground (%)
+mean [ground] of patches
+2
+1
+10
+
+MONITOR
+454
+436
+535
+477
+vegetation (%)
+flora + (sfi - ideal_sfi / ideal_sfi)
+2
+1
+10
+
+MONITOR
+454
+481
+535
+522
+air (%)
+air
+2
+1
+10
+
+TEXTBOX
+786
+10
+910
+30
+Ecosystem Services
+12
+0.0
+1
+
+TEXTBOX
+690
+34
+795
+52
+Regulating services
+12
+0.0
+1
+
+TEXTBOX
+853
+34
+1003
+52
+Provisioning services
+12
+0.0
+1
+
+TEXTBOX
+850
+213
+1000
+231
+Cultural services
+12
+0.0
+1
+
+SWITCH
+690
+126
+830
+159
+microclimate_regulation
+microclimate_regulation
+0
+1
+-1000
+
+SWITCH
+690
+50
+831
+83
+erosion_control
+erosion_control
+0
+1
+-1000
+
+SWITCH
+690
+88
+830
+121
+gas_regulation
+gas_regulation
+0
+1
+-1000
+
+SWITCH
+690
+162
+830
+195
+nutrient_cycling
+nutrient_cycling
+0
+1
+-1000
+
+SWITCH
+690
+198
+830
+231
+pollination
+pollination
+0
+1
+-1000
+
+SWITCH
+690
+234
+830
+267
+soil_formation
+soil_formation
+0
+1
+-1000
+
+SWITCH
+690
+271
+830
+304
+refugia
+refugia
+0
+1
+-1000
+
+SWITCH
+690
+307
+830
+340
+water_regulation
+water_regulation
+0
+1
+-1000
+
+SWITCH
+690
+343
+830
+376
+waste_treatment
+waste_treatment
+1
+1
+-1000
+
+SWITCH
+849
+49
+978
+82
+food_production
+food_production
+1
+1
+-1000
+
+SWITCH
+849
+86
+978
+119
+genetic_resources
+genetic_resources
+0
+1
+-1000
+
+SWITCH
+849
+122
+978
+155
+raw_materials
+raw_materials
+1
+1
+-1000
+
+SWITCH
+848
+158
+978
+191
+water_supply
+water_supply
+0
+1
+-1000
+
+SWITCH
+847
+232
+976
+265
+cultural_use
+cultural_use
+0
+1
+-1000
+
+SWITCH
+847
+305
+978
+338
+recreation
+recreation
+0
+1
+-1000
+
+PLOT
+567
+391
+925
+529
+Ecosystem Services Value change
+ticks
+(%)
+0.0
+10.0
+-10.0
+10.0
+true
+true
+"" ""
+PENS
+"regulating" 1.0 0 -14835848 true "" "plot regulating"
+"provisioning" 1.0 0 -955883 true "" "plot provisioning"
+"cultural" 1.0 0 -7500403 true "" "plot cultural"
+
+SLIDER
+847
+341
+978
+374
+satisfaction_level
+satisfaction_level
+0
+1
+0.5
+0.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+847
+267
+976
+300
+usage_level
+usage_level
+0
+1
+0.5
+0.50
+1
+NIL
+HORIZONTAL
+
+MONITOR
+931
+392
+1016
+433
+regulating (%)
+regulating
+2
+1
+10
+
+MONITOR
+931
+438
+1017
+479
+provisioning (%)
+provisioning
+2
+1
+10
+
+MONITOR
+931
+484
+1017
+525
+cultural (%)
+cultural
+2
+1
+10
+
+@#$#@#$#@
+## WHAT IS IT?
+
+Τhe model’s purpose is the quantitative assessment of the resilience and the sustainability of a specific Nature-based Solution (NbS) project, using as main inputs the modeling elements, namely the agents’ typology, spatial and temporal resolution. The processes developed in this model involve the existing or expected ecosystem functions, normal evolutionary procedures and interactions among elements, as well as selected disruptive events. The model calculates and reports in every tick the examined systems’ performance in various aspects, such as vegetation condition or air quality, and simultaneously monitors the values of selected ecosustem services.
+
+The model comprises four (4) categories of patches, namely the built environment with light grey color, the ground with brown color, the underground with dark grey color at the basis of the cube, and the air that is transparent. Different patches that represent different components, are also characterized by different variables.  The natural system comprises four (4) discrete subsystems, namely the ground and the air with their abiotic components and the flora and fauna with their biotic elements. In the agent-based modeling approach all the abiotic components are translated into patches, while the biotic entities are translated into agents.   
+
+## HOW IT WORKS
+
+The model incorporates some indicative ecosystem functions and their effects in the form of procedures executed by the agents in their environment at the evolution of the simulation. The agents' procedures rendered in the model include the assessment of soil rainwater retention capacity, the assessment of soil fertility, the assessment of flora status, the regeneration of vegetation, the air cooling effect, the assessment of air quality, the attractiveness to community, and the estimation of bird refugia status.
+Different alternative NbS design options (namely rain garden, bioswale, and permeable pavement) can be examined, while the disruptive conditions of drought and rainstorm can also be simulated to run diverse possible scenarios.
+The model estimates the respective performance values of each tick and reports the percentage change from the initial ideal condition during the setup. Similalry, the model estimates the corresponding changes in the reported values of the selected ecosystem services. 
+
+## HOW TO USE IT
+
+The user can to determine desired values in the sliders or choosers of the available parameters (environmental properties). Additionally, it is necessary to set the NbS infrastructure type and the occurance (or not) of any disruptive event, by using the respective switches. The switches also determine which of the available ecosystem services will be included in the estimation of the corresponding sections of the Ecosystem Services Values (ESV).
+The percentage changes in all the selected parameters of the performamce scores and the ESV scores are monitored in the respective plots.
+
+
+## CREDITS AND REFERENCES
+
+Babí Almenar, J., Petucco, C., Sonnemann, G., Geneletti, D., Elliot, T. and Rugani, B., 2023. Modelling the net environmental and economic impacts of urban nature-based solutions by combining ecosystem services, system dynamics and life cycle thinking: An application to urban forests. Ecosystem Services, 60, p.101506. https://doi.org/10.1016/J.ECOSER.2022.101506.
+
+Costanza, R., de Groot, R., Farberll, S., Grassot, M., Hannon, B., Limburg, K., Naeem, S., O, R. V, Paruelo, J., Raskin, R.G. and Suttonllll, P., 1997. The value of the world’s ecosystem services and natural capital. Nature, 387, pp.253–260.
+
+Datta, S., Sharma, A., Parkar, V., Hakkim, H., Kumar, A., Chauhan, A., Tomar, S.S. and Sinha, B., 2021. A new index to assess the air quality impact of urban tree plantation. Urban Climate, 40, p.100995. https://doi.org/10.1016/J.UCLIM.2021.100995.
+
+Du, J., Yu, M., Cong, Y., Lv, H. and Yuan, Z., 2022. Soil Organic Carbon Storage in Urban Green Space and Its Influencing Factors: A Case Study of the 0–20 cm Soil Layer in Guangzhou City. Land, [online] 11(9), p.1484. https://doi.org/10.3390/LAND11091484/S1.
+
+Du, M., Li, N., Hu, T., Yang, Q., Chakraborty, T.C., Venter, Z. and Yao, R., 2024. Daytime cooling efficiencies of urban trees derived from land surface temperature are much higher than those for air temperature. Environmental Research Letters, [online] 19(4), p.044037. https://doi.org/10.1088/1748-9326/AD30A3.
+
+Mahajan, M. and Fatima, S., 2017. FREQUENCY, ABUNDANCE AND DENSITY OF PLANT SPECIES BY LIST COUNT QUADRAT METHOD. [online] III, pp.2395–6968. Available at: <http://www.epitomejournals.com> [Accessed 9 August 2024].
+
+Minnesota Pollution Control Agency, 2025. Minnesota Stormwater Manual. Soil water storage properties. [online] Minnesota Stormwater Manual. Available at: <https://stormwater.pca.state.mn.us/index.php/Soil_water_storage_properties> [Accessed 7 August 2024].
+
+Moran, E.F., Brondizio, E.S., Tucker, J.M., Da Silva-Forsberg, M.C., McCracken, S. and Falesi, I., 2000. Effects of soil fertility and land-use on forest succession in Amazônia. Forest Ecology and Management, 139(1–3), pp.93–108. https://doi.org/10.1016/S0378-1127(99)00337-0.
+
+Muthulingam, U. and Thangavel, S., 2012. Density, diversity and richness of woody plants in urban green spaces: A case study in Chennai metropolitan city. Urban Forestry & Urban Greening, 11(4), pp.450–459. https://doi.org/10.1016/J.UFUG.2012.08.003.
+
+Neumann, J., Scheid, C. and Dittmer, U., 2024. Potential of Decentral Nature-Based Solutions for Mitigation of Pluvial Floods in Urban Areas—A Simulation Study Based on 1D/2D Coupled Modeling. Water 2024, Vol. 16, Page 811, [online] 16(6), p.811. https://doi.org/10.3390/W16060811.
+
+Nowak, D.J., 2012. Contrasting natural regeneration and tree planting in fourteen North American cities. Urban Forestry & Urban Greening, 11(4), pp.374–382. https://doi.org/10.1016/J.UFUG.2012.02.005.
+
+Panwar, P., Pal, S., Reza, S.K. and Sharma, B., 2011. Soil fertility index, soil evaluation factor, and microbial indices under different land uses in acidic soil of humid subtropical India. Communications in Soil Science and Plant Analysis, 42(22), pp.2724–2737. https://doi.org/10.1080/00103624.2011.622820.
+
+Tzoulas, K., Galan, J., Venn, S., Dennis, M., Pedroli, B., Mishra, H., Haase, D., Pauleit, S., Niemelä, J. and James, P., 2021. A conceptual model of the social–ecological system of nature-based solutions in urban environments. Ambio, [online] 50(2), pp.335–345. https://doi.org/10.1007/S13280-020-01380-2/TABLES/3.
+ 
+@#$#@#$#@
+default
+true
+0
+Polygon -7500403 true true 150 5 40 250 150 205 260 250
+
+airplane
+true
+0
+Polygon -7500403 true true 150 0 135 15 120 60 120 105 15 165 15 195 120 180 135 240 105 270 120 285 150 270 180 285 210 270 165 240 180 180 285 195 285 165 180 105 180 60 165 15
+
+arrow
+true
+0
+Polygon -7500403 true true 150 0 0 150 105 150 105 293 195 293 195 150 300 150
+
+box
+false
+0
+Polygon -7500403 true true 150 285 285 225 285 75 150 135
+Polygon -7500403 true true 150 135 15 75 150 15 285 75
+Polygon -7500403 true true 15 75 15 225 150 285 150 135
+Line -16777216 false 150 285 150 135
+Line -16777216 false 150 135 15 75
+Line -16777216 false 150 135 285 75
+
+bug
+true
+0
+Circle -7500403 true true 96 182 108
+Circle -7500403 true true 110 127 80
+Circle -7500403 true true 110 75 80
+Line -7500403 true 150 100 80 30
+Line -7500403 true 150 100 220 30
+
+butterfly
+true
+0
+Polygon -7500403 true true 150 165 209 199 225 225 225 255 195 270 165 255 150 240
+Polygon -7500403 true true 150 165 89 198 75 225 75 255 105 270 135 255 150 240
+Polygon -7500403 true true 139 148 100 105 55 90 25 90 10 105 10 135 25 180 40 195 85 194 139 163
+Polygon -7500403 true true 162 150 200 105 245 90 275 90 290 105 290 135 275 180 260 195 215 195 162 165
+Polygon -16777216 true false 150 255 135 225 120 150 135 120 150 105 165 120 180 150 165 225
+Circle -16777216 true false 135 90 30
+Line -16777216 false 150 105 195 60
+Line -16777216 false 150 105 105 60
+
+car
+false
+0
+Polygon -7500403 true true 300 180 279 164 261 144 240 135 226 132 213 106 203 84 185 63 159 50 135 50 75 60 0 150 0 165 0 225 300 225 300 180
+Circle -16777216 true false 180 180 90
+Circle -16777216 true false 30 180 90
+Polygon -16777216 true false 162 80 132 78 134 135 209 135 194 105 189 96 180 89
+Circle -7500403 true true 47 195 58
+Circle -7500403 true true 195 195 58
+
+circle
+false
+0
+Circle -7500403 true true 0 0 300
+
+circle 2
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+
+cow
+false
+0
+Polygon -7500403 true true 200 193 197 249 179 249 177 196 166 187 140 189 93 191 78 179 72 211 49 209 48 181 37 149 25 120 25 89 45 72 103 84 179 75 198 76 252 64 272 81 293 103 285 121 255 121 242 118 224 167
+Polygon -7500403 true true 73 210 86 251 62 249 48 208
+Polygon -7500403 true true 25 114 16 195 9 204 23 213 25 200 39 123
+
+cylinder
+false
+0
+Circle -7500403 true true 0 0 300
+
+dot
+false
+0
+Circle -7500403 true true 90 90 120
+
+face happy
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 255 90 239 62 213 47 191 67 179 90 203 109 218 150 225 192 218 210 203 227 181 251 194 236 217 212 240
+
+face neutral
+false
+0
+Circle -7500403 true true 8 7 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Rectangle -16777216 true false 60 195 240 225
+
+face sad
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 168 90 184 62 210 47 232 67 244 90 220 109 205 150 198 192 205 210 220 227 242 251 229 236 206 212 183
+
+fish
+false
+0
+Polygon -1 true false 44 131 21 87 15 86 0 120 15 150 0 180 13 214 20 212 45 166
+Polygon -1 true false 135 195 119 235 95 218 76 210 46 204 60 165
+Polygon -1 true false 75 45 83 77 71 103 86 114 166 78 135 60
+Polygon -7500403 true true 30 136 151 77 226 81 280 119 292 146 292 160 287 170 270 195 195 210 151 212 30 166
+Circle -16777216 true false 215 106 30
+
+flag
+false
+0
+Rectangle -7500403 true true 60 15 75 300
+Polygon -7500403 true true 90 150 270 90 90 30
+Line -7500403 true 75 135 90 135
+Line -7500403 true 75 45 90 45
+
+flower
+false
+0
+Polygon -10899396 true false 135 120 165 165 180 210 180 240 150 300 165 300 195 240 195 195 165 135
+Circle -7500403 true true 85 132 38
+Circle -7500403 true true 130 147 38
+Circle -7500403 true true 192 85 38
+Circle -7500403 true true 85 40 38
+Circle -7500403 true true 177 40 38
+Circle -7500403 true true 177 132 38
+Circle -7500403 true true 70 85 38
+Circle -7500403 true true 130 25 38
+Circle -7500403 true true 96 51 108
+Circle -16777216 true false 113 68 74
+Polygon -10899396 true false 189 233 219 188 249 173 279 188 234 218
+Polygon -10899396 true false 180 255 150 210 105 210 75 240 135 240
+
+house
+false
+0
+Rectangle -7500403 true true 45 120 255 285
+Rectangle -16777216 true false 120 210 180 285
+Polygon -7500403 true true 15 120 150 15 285 120
+Line -16777216 false 30 120 270 120
+
+leaf
+false
+0
+Polygon -7500403 true true 150 210 135 195 120 210 60 210 30 195 60 180 60 165 15 135 30 120 15 105 40 104 45 90 60 90 90 105 105 120 120 120 105 60 120 60 135 30 150 15 165 30 180 60 195 60 180 120 195 120 210 105 240 90 255 90 263 104 285 105 270 120 285 135 240 165 240 180 270 195 240 210 180 210 165 195
+Polygon -7500403 true true 135 195 135 240 120 255 105 255 105 285 135 285 165 240 165 195
+
+line
+true
+0
+Line -7500403 true 150 0 150 300
+
+line half
+true
+0
+Line -7500403 true 150 0 150 150
+
+pentagon
+false
+0
+Polygon -7500403 true true 150 15 15 120 60 285 240 285 285 120
+
+person
+false
+0
+Circle -7500403 true true 110 5 80
+Polygon -7500403 true true 105 90 120 195 90 285 105 300 135 300 150 225 165 300 195 300 210 285 180 195 195 90
+Rectangle -7500403 true true 127 79 172 94
+Polygon -7500403 true true 195 90 240 150 225 180 165 105
+Polygon -7500403 true true 105 90 60 150 75 180 135 105
+
+plant
+false
+0
+Rectangle -7500403 true true 135 90 165 300
+Polygon -7500403 true true 135 255 90 210 45 195 75 255 135 285
+Polygon -7500403 true true 165 255 210 210 255 195 225 255 165 285
+Polygon -7500403 true true 135 180 90 135 45 120 75 180 135 210
+Polygon -7500403 true true 165 180 165 210 225 180 255 120 210 135
+Polygon -7500403 true true 135 105 90 60 45 45 75 105 135 135
+Polygon -7500403 true true 165 105 165 135 225 105 255 45 210 60
+Polygon -7500403 true true 135 90 120 45 150 15 180 45 165 90
+
+sheep
+false
+15
+Circle -1 true true 203 65 88
+Circle -1 true true 70 65 162
+Circle -1 true true 150 105 120
+Polygon -7500403 true false 218 120 240 165 255 165 278 120
+Circle -7500403 true false 214 72 67
+Rectangle -1 true true 164 223 179 298
+Polygon -1 true true 45 285 30 285 30 240 15 195 45 210
+Circle -1 true true 3 83 150
+Rectangle -1 true true 65 221 80 296
+Polygon -1 true true 195 285 210 285 210 240 240 210 195 210
+Polygon -7500403 true false 276 85 285 105 302 99 294 83
+Polygon -7500403 true false 219 85 210 105 193 99 201 83
+
+square
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+
+square 2
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+Rectangle -16777216 true false 60 60 240 240
+
+star
+false
+0
+Polygon -7500403 true true 151 1 185 108 298 108 207 175 242 282 151 216 59 282 94 175 3 108 116 108
+
+target
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+Circle -7500403 true true 60 60 180
+Circle -16777216 true false 90 90 120
+Circle -7500403 true true 120 120 60
+
+tree
+false
+0
+Circle -7500403 true true 118 3 94
+Rectangle -6459832 true false 120 195 180 300
+Circle -7500403 true true 65 21 108
+Circle -7500403 true true 116 41 127
+Circle -7500403 true true 45 90 120
+Circle -7500403 true true 104 74 152
+
+triangle
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+
+triangle 2
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+Polygon -16777216 true false 151 99 225 223 75 224
+
+truck
+false
+0
+Rectangle -7500403 true true 4 45 195 187
+Polygon -7500403 true true 296 193 296 150 259 134 244 104 208 104 207 194
+Rectangle -1 true false 195 60 195 105
+Polygon -16777216 true false 238 112 252 141 219 141 218 112
+Circle -16777216 true false 234 174 42
+Rectangle -7500403 true true 181 185 214 194
+Circle -16777216 true false 144 174 42
+Circle -16777216 true false 24 174 42
+Circle -7500403 false true 24 174 42
+Circle -7500403 false true 144 174 42
+Circle -7500403 false true 234 174 42
+
+turtle
+true
+0
+Polygon -10899396 true false 215 204 240 233 246 254 228 266 215 252 193 210
+Polygon -10899396 true false 195 90 225 75 245 75 260 89 269 108 261 124 240 105 225 105 210 105
+Polygon -10899396 true false 105 90 75 75 55 75 40 89 31 108 39 124 60 105 75 105 90 105
+Polygon -10899396 true false 132 85 134 64 107 51 108 17 150 2 192 18 192 52 169 65 172 87
+Polygon -10899396 true false 85 204 60 233 54 254 72 266 85 252 107 210
+Polygon -7500403 true true 119 75 179 75 209 101 224 135 220 225 175 261 128 261 81 224 74 135 88 99
+
+wheel
+false
+0
+Circle -7500403 true true 3 3 294
+Circle -16777216 true false 30 30 240
+Line -7500403 true 150 285 150 15
+Line -7500403 true 15 150 285 150
+Circle -7500403 true true 120 120 60
+Line -7500403 true 216 40 79 269
+Line -7500403 true 40 84 269 221
+Line -7500403 true 40 216 269 79
+Line -7500403 true 84 40 221 269
+
+wolf
+false
+0
+Polygon -16777216 true false 253 133 245 131 245 133
+Polygon -7500403 true true 2 194 13 197 30 191 38 193 38 205 20 226 20 257 27 265 38 266 40 260 31 253 31 230 60 206 68 198 75 209 66 228 65 243 82 261 84 268 100 267 103 261 77 239 79 231 100 207 98 196 119 201 143 202 160 195 166 210 172 213 173 238 167 251 160 248 154 265 169 264 178 247 186 240 198 260 200 271 217 271 219 262 207 258 195 230 192 198 210 184 227 164 242 144 259 145 284 151 277 141 293 140 299 134 297 127 273 119 270 105
+Polygon -7500403 true true -1 195 14 180 36 166 40 153 53 140 82 131 134 133 159 126 188 115 227 108 236 102 238 98 268 86 269 92 281 87 269 103 269 113
+
+x
+false
+0
+Polygon -7500403 true true 270 75 225 30 30 225 75 270
+Polygon -7500403 true true 30 75 75 30 270 225 225 270
+@#$#@#$#@
+NetLogo 3D 6.4.0
+@#$#@#$#@
+need-to-manually-make-preview-for-this-model
+@#$#@#$#@
+@#$#@#$#@
+@#$#@#$#@
+@#$#@#$#@
+default
+0.0
+-0.2 0 0.0 1.0
+0.0 1 1.0 0.0
+0.2 0 0.0 1.0
+link direction
+true
+0
+Line -7500403 true 150 150 90 180
+Line -7500403 true 150 150 210 180
+@#$#@#$#@
+0
+@#$#@#$#@
